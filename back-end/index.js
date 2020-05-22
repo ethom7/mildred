@@ -1,96 +1,75 @@
+// index.js
+
 'use strict';
-
-// am deciding not to use this to avoid the use of outside libraries
-// TODO: maybe remove or leave for future implementation
-
-/* var whois = require('whois')
-
-function lookupWhois(inputString) {
-    var returnData = whois.lookup(inputString, function(err, data) {
-        console.log(data)
-    })
-    return returnData;
-} */
 
 const https = require('https');
 
+let index = {};
+
 var ipApi = "https://freegeoip.app/json/";
 
-function simpleIPLookup(inputString) {
-    let outputData = "";
-    var apiUrl = ipApi + inputString;
-
-    var options = {
-        method : 'GET'
-    }
- 
-    //making the https get call
-    var getReq = https.request(apiUrl, options, function(res) {
-        console.log("\nstatus code: ", res.statusCode);
-        res.on('data', function(data) {
-            console.log( JSON.parse(data) );
-            outputData = JSON.parse(data);
-        });
-    });
- 
-    //end the request
-    getReq.end();
-    getReq.on('error', function(err){
-        console.log("Error: ", err);
-    }); 
-
-    return outputData;
-}
-
-
-console.log('Loading function');
-
 exports.handler = async (event) => {
-    // ipAddress either ipv4 or ipv6
     let ipAddress = "";
     let domainFileHash = '';
-    let responseCode = 200;
-    console.log("request: " + JSON.stringify(event));
-    
+    var url = "";
+
     if (event.queryStringParameters && event.queryStringParameters.ipAddress) {
         console.log("Received ipAddress: " + event.queryStringParameters.ipAddress);
         ipAddress = event.queryStringParameters.ipAddress;
     }
-    
+
     if (event.body) {
         let body = JSON.parse(event.body)
         if (body.domainFileHash) {
             console.log("Received domainFileHash: " + body.domainFileHash);
             domainFileHash = body.domainFileHash;
         }
-            
-    }
 
-    let outputMessage = "Neither an ipAddress nor a domainFileHash was provided.";
-    let returnMessage = "";
+    }
 
     if (ipAddress) {
-        //returnMessage = lookupWhois(ipAddress);
-        returnMessage = simpleIPLookup(ipAddress);
-        outputMessage += "\n" + returnMessage;
+        url = ipApi + ipAddress;
     } else if (domainFileHash) {
-        //returnMessage = lookupWhois(domainFileHash);
-        returnMessage = simpleIPLookup(domainFileHash);
-        outputMessage += "\n" + returnMessage;
+        url = ipApi + domainFileHash;
     }
-    
-    let responseBody = {
-        message: returnMessage,
-        input: event
-    };
-    
-    let response = {
-        statusCode: responseCode,
-        headers: {
-            "x-custom-header": "my custom header value"
-        },
-        body: JSON.stringify(responseBody)
-    };
-    console.log("response: " + JSON.stringify(response))
-    return response;
+    return httprequest(url).then((data) => {
+        const response = {
+            statusCode: 200,
+            body: JSON.stringify(data),
+        };
+        return response;
+    });
 };
+
+function httprequest(url) {
+    return new Promise((resolve, reject) => {
+        const options = {
+            method: 'GET'
+        };
+        const req = https.request(url, options, (res) => {
+            if (res.statusCode < 200 || res.statusCode >= 300) {
+                return reject(new Error('statusCode=' + res.statusCode));
+            }
+            var body = [];
+            res.on('data', function(chunk) {
+                body.push(chunk);
+            });
+            res.on('end', function() {
+                try {
+                    body = JSON.parse(Buffer.concat(body).toString());
+                } catch(e) {
+                    reject(e);
+                }
+                resolve(body);
+            });
+        });
+        req.on('error', (e) => {
+            reject(e.message);
+        });
+        // send the request
+        req.end();
+    });
+}
+
+
+module.exports = index;
